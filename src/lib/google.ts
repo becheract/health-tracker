@@ -1,7 +1,8 @@
 import { env } from "./env";
 import { getSetting, setSetting } from "./settings";
 
-const SCOPES = ["openid", "email", "https://www.googleapis.com/auth/gmail.readonly"];
+export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+const SCOPES = ["openid", "email", GMAIL_SCOPE];
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 export function redirectUri() {
@@ -21,7 +22,7 @@ export function authUrl(state: string) {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
-type TokenResponse = { access_token: string; expires_in: number; refresh_token?: string; id_token?: string };
+type TokenResponse = { access_token: string; expires_in: number; scope?: string; refresh_token?: string; id_token?: string };
 
 async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
   const res = await fetch("https://oauth2.googleapis.com/token", {
@@ -47,14 +48,15 @@ export function emailFromIdToken(idToken: string): string | null {
   return payload.email_verified ? String(payload.email).toLowerCase() : null;
 }
 
-let cached: { token: string; expiresAt: number } | null = null;
+// Keyed by refresh token so signing in again (e.g. with more permissions) takes effect immediately.
+let cached: { refresh: string; token: string; expiresAt: number } | null = null;
 
 export async function accessToken(): Promise<string> {
-  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
   const refresh = await getSetting("google_refresh_token");
   if (!refresh) throw new Error("Gmail is not connected yet. Sign in once to connect it.");
+  if (cached && cached.refresh === refresh && cached.expiresAt > Date.now() + 60_000) return cached.token;
   const t = await tokenRequest({ refresh_token: refresh, grant_type: "refresh_token" });
-  cached = { token: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 };
+  cached = { refresh, token: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 };
   return cached.token;
 }
 

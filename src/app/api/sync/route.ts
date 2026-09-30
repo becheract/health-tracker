@@ -7,6 +7,10 @@ export async function POST(req: NextRequest) {
   try {
     return NextResponse.json(await syncFromGmail({ full }));
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Sync failed" }, { status: 500 });
+    const message = e instanceof Error ? e.message : "Sync failed";
+    if (message.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT")) {
+      return NextResponse.json({ error: "Gmail access wasn't granted. Sign out, sign in again and tick the Gmail box." }, { status: 403 });
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

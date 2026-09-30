@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { emailFromIdToken, exchangeCode, startWatch } from "@/lib/google";
+import { emailFromIdToken, exchangeCode, GMAIL_SCOPE, startWatch } from "@/lib/google";
 import { createSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
 import { setSetting } from "@/lib/settings";
 import { syncFromGmail } from "@/lib/sync";
@@ -17,6 +17,11 @@ export async function GET(req: NextRequest) {
   const tokens = await exchangeCode(code);
   const email = tokens.id_token ? emailFromIdToken(tokens.id_token) : null;
   if (!email || email !== env("ALLOWED_EMAIL").toLowerCase()) return fail("This Google account is not allowed.");
+
+  // Google lets people untick individual permissions on the consent screen.
+  if (!tokens.scope?.split(" ").includes(GMAIL_SCOPE)) {
+    return fail("Vitals needs to read your kiosk result emails. Sign in again and tick the Gmail box on Google's permission screen.");
+  }
 
   if (tokens.refresh_token) {
     await setSetting("google_refresh_token", tokens.refresh_token);
