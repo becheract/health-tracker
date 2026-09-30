@@ -10,5 +10,5 @@ export default async function Home() {
     getSetting("last_sync_at"),
     getSetting("google_refresh_token").then(Boolean),
   ]);
-  return <Dashboard bp={readings.bp} weight={readings.weight} lastSync={lastSync} connected={connected} now={Date.now()} />;
+  return <Dashboard bp={readings.bp} weight={readings.weight} calories={readings.calories} lastSync={lastSync} connected={connected} now={Date.now()} />;
 }

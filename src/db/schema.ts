@@ -1,4 +1,4 @@
-import { integer, numeric, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { date, integer, numeric, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const bpReadings = pgTable(
   "bp_readings",
@@ -43,5 +43,13 @@ export const processedMessages = pgTable("processed_messages", {
 export const settings = pgTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Daily calories eaten, sent from Apple Health (MyFitnessPal) by the Health Auto Export app.
+export const calorieDays = pgTable("calorie_days", {
+  day: date("day", { mode: "string" }).primaryKey(),
+  kcal: numeric("kcal", { precision: 7, scale: 1, mode: "number" }).notNull(),
+  source: text("source").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

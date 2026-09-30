@@ -2,12 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BpPoint, WeightPoint } from "@/lib/readings";
+import type { BpPoint, CaloriePoint, WeightPoint } from "@/lib/readings";
 
 const KG_TO_LB = 2.2046226218;
 const DAY = 864e5;
 
-type Metric = "bp" | "wt";
+type Metric = "bp" | "wt" | "kcal";
 type Range = 1 | 3 | 6 | 12 | 0;
 const RANGES: { value: Range; label: string }[] = [
   { value: 1, label: "1M" },
@@ -17,10 +17,10 @@ const RANGES: { value: Range; label: string }[] = [
   { value: 0, label: "All" },
 ];
 
-type Props = { bp: BpPoint[]; weight: WeightPoint[]; lastSync: string | null; connected: boolean; now: number };
+type Props = { bp: BpPoint[]; weight: WeightPoint[]; calories: CaloriePoint[]; lastSync: string | null; connected: boolean; now: number };
 
-export default function Dashboard({ bp, weight, lastSync, connected, now }: Props) {
-  const [metric, setMetric] = useStored<Metric>("vitals.metric", "bp", (v) => v === "bp" || v === "wt");
+export default function Dashboard({ bp, weight, calories, lastSync, connected, now }: Props) {
+  const [metric, setMetric] = useStored<Metric>("vitals.metric", "bp", (v) => v === "bp" || v === "wt" || v === "kcal");
   const [range, setRange] = useStored<Range>("vitals.range", 6, (v) => RANGES.some((r) => r.value === v));
   const lastReading = Math.max(bp.at(-1)?.t ?? 0, weight.at(-1)?.t ?? 0);
 
@@ -42,7 +42,7 @@ export default function Dashboard({ bp, weight, lastSync, connected, now }: Prop
         </div>
       </header>
 
-      <Summary bp={bp} weight={weight} now={now} />
+      <Summary bp={bp} weight={weight} calories={calories} now={now} />
 
       <section className="panel" aria-label="Trend">
         <div className="controls">
@@ -53,6 +53,9 @@ export default function Dashboard({ bp, weight, lastSync, connected, now }: Prop
             <button aria-pressed={metric === "wt"} onClick={() => setMetric("wt")}>
               Weight
             </button>
+            <button aria-pressed={metric === "kcal"} onClick={() => setMetric("kcal")}>
+              Calories
+            </button>
           </div>
           <div className="seg" role="group" aria-label="Time range">
             {RANGES.map((r) => (
@@ -62,7 +65,7 @@ export default function Dashboard({ bp, weight, lastSync, connected, now }: Prop
             ))}
           </div>
         </div>
-        <TrendChart metric={metric} range={range} bp={bp} weight={weight} now={now} />
+        <TrendChart metric={metric} range={range} bp={bp} weight={weight} calories={calories} now={now} />
       </section>
 
       <Log bp={bp} weight={weight} />
@@ -76,7 +79,7 @@ export default function Dashboard({ bp, weight, lastSync, connected, now }: Prop
 
 /* ---------- Summary ---------- */
 
-function Summary({ bp, weight, now }: { bp: BpPoint[]; weight: WeightPoint[]; now: number }) {
+function Summary({ bp, weight, calories, now }: { bp: BpPoint[]; weight: WeightPoint[]; calories: CaloriePoint[]; now: number }) {
   const lastBp = bp.at(-1);
   const lastWt = weight.at(-1);
   const monthAgo = weight.filter((w) => w.t <= now - 30 * DAY).at(-1);
@@ -84,9 +87,14 @@ function Summary({ bp, weight, now }: { bp: BpPoint[]; weight: WeightPoint[]; no
   const recent = bp.filter((r) => r.t >= now - 90 * DAY);
   const avgSys = recent.length ? Math.round(recent.reduce((a, r) => a + r.systolic, 0) / recent.length) : null;
   const avgDia = recent.length ? Math.round(recent.reduce((a, r) => a + r.diastolic, 0) / recent.length) : null;
+  // Last 7 complete days; today is still being logged.
+  const today = localDay(now);
+  const week = calories.filter((c) => c.day < today && c.day >= localDay(now - 7 * DAY));
+  const avgKcal = week.length ? Math.round(week.reduce((a, c) => a + c.kcal, 0) / week.length) : null;
+  const todayKcal = calories.find((c) => c.day === today)?.kcal;
 
   return (
-    <section className="summary" aria-label="Latest readings">
+    <section className={calories.length ? "summary four" : "summary"} aria-label="Latest readings">
       <div className="stat">
         <span className="label">Blood pressure</span>
         <span className="value">
@@ -125,6 +133,16 @@ function Summary({ bp, weight, now }: { bp: BpPoint[]; weight: WeightPoint[]; no
           </span>
         )}
       </div>
+      {calories.length > 0 && (
+        <div className="stat">
+          <span className="label">Calories, 7-day avg</span>
+          <span className="value">
+            {avgKcal !== null ? fmtKcal(avgKcal) : "–"}
+            {avgKcal !== null && <small>kcal</small>}
+          </span>
+          <span className="sub">{todayKcal !== undefined ? `${fmtKcal(todayKcal)} so far today` : `${week.length} days logged`}</span>
+        </div>
+      )}
     </section>
   );
 }
@@ -132,9 +150,23 @@ function Summary({ bp, weight, now }: { bp: BpPoint[]; weight: WeightPoint[]; no
 /* ---------- Chart ---------- */
 
 type Series = { key: string; name: string; color: string; value: (i: number) => number };
-type Row = { t: number; source: string; bp?: BpPoint; wt?: WeightPoint };
+type Row = { t: number; source: string; bp?: BpPoint; wt?: WeightPoint; kc?: CaloriePoint };
 
-function TrendChart({ metric, range, bp, weight, now }: { metric: Metric; range: Range; bp: BpPoint[]; weight: WeightPoint[]; now: number }) {
+function TrendChart({
+  metric,
+  range,
+  bp,
+  weight,
+  calories,
+  now,
+}: {
+  metric: Metric;
+  range: Range;
+  bp: BpPoint[];
+  weight: WeightPoint[];
+  calories: CaloriePoint[];
+  now: number;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const width = useWidth(box);
   const [hover, setHover] = useState<number | null>(null);
@@ -144,8 +176,10 @@ function TrendChart({ metric, range, bp, weight, now }: { metric: Metric; range:
     () =>
       metric === "bp"
         ? bp.filter((r) => r.t >= from).map((r) => ({ t: r.t, source: r.source, bp: r }))
-        : weight.filter((r) => r.t >= from).map((r) => ({ t: r.t, source: r.source, wt: r })),
-    [metric, bp, weight, from],
+        : metric === "wt"
+          ? weight.filter((r) => r.t >= from).map((r) => ({ t: r.t, source: r.source, wt: r }))
+          : calories.filter((r) => r.t >= from).map((r) => ({ t: r.t, source: r.source, kc: r })),
+    [metric, bp, weight, calories, from],
   );
   useEffect(() => setHover(null), [metric, range]);
 
@@ -155,9 +189,11 @@ function TrendChart({ metric, range, bp, weight, now }: { metric: Metric; range:
           { key: "sys", name: "Systolic", color: "--sys", value: (i) => rows[i].bp!.systolic },
           { key: "dia", name: "Diastolic", color: "--dia", value: (i) => rows[i].bp!.diastolic },
         ]
-      : [{ key: "wt", name: "Weight", color: "--wt", value: (i) => round1(lb(rows[i].wt!.weightKg)) }];
+      : metric === "wt"
+        ? [{ key: "wt", name: "Weight", color: "--wt", value: (i) => round1(lb(rows[i].wt!.weightKg)) }]
+        : [{ key: "kcal", name: "Calories", color: "--kcal", value: (i) => Math.round(rows[i].kc!.kcal) }];
 
-  const title = metric === "bp" ? "Blood pressure, mmHg" : "Weight, lb";
+  const title = metric === "bp" ? "Blood pressure, mmHg" : metric === "wt" ? "Weight, lb" : "Calories eaten per day, kcal";
   const W = Math.max(300, width || 880);
   const H = W < 560 ? 220 : 300;
   const P = { l: 36, r: 12, t: 12, b: 28 };
@@ -187,7 +223,11 @@ function TrendChart({ metric, range, bp, weight, now }: { metric: Metric; range:
       <>
         {head}
         <div className="chart" ref={box}>
-          <div className="empty">No {metric === "bp" ? "blood pressure" : "weight"} readings in this range.</div>
+          <div className="empty">
+            {metric === "kcal" && !calories.length
+              ? "No calories yet. They arrive from MyFitnessPal through Apple Health and Health Auto Export."
+              : `No ${metric === "bp" ? "blood pressure" : metric === "wt" ? "weight" : "calorie"} readings in this range.`}
+          </div>
         </div>
       </>
     );
@@ -199,9 +239,12 @@ function TrendChart({ metric, range, bp, weight, now }: { metric: Metric; range:
   if (metric === "bp") {
     lo = Math.min(lo, 80) - 6;
     hi = Math.max(hi, 120) + 6;
-  } else {
+  } else if (metric === "wt") {
     lo -= 1.5;
     hi += 1.5;
+  } else {
+    lo = Math.max(0, lo - 200);
+    hi += 200;
   }
   const ticks = niceTicks(lo, hi);
   const y0 = ticks[0];
@@ -253,10 +296,12 @@ function TrendChart({ metric, range, bp, weight, now }: { metric: Metric; range:
       >
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}, ${rows.length} readings`}>
           <defs>
-            <linearGradient id="g-wt" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0" stopColor="var(--wt)" stopOpacity={0.16} />
-              <stop offset="1" stopColor="var(--wt)" stopOpacity={0} />
-            </linearGradient>
+            {["wt", "kcal"].map((k) => (
+              <linearGradient key={k} id={`g-${k}`} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stopColor={`var(--${k})`} stopOpacity={0.16} />
+                <stop offset="1" stopColor={`var(--${k})`} stopOpacity={0} />
+              </linearGradient>
+            ))}
           </defs>
           {ticks.map((v) => (
             <g key={v}>
@@ -282,7 +327,7 @@ function TrendChart({ metric, range, bp, weight, now }: { metric: Metric; range:
             return (
               <g key={s.key}>
                 {series.length === 1 && pts.length > 1 && (
-                  <path d={`${d}L${end[0]},${Y(y0)}L${pts[0][0]},${Y(y0)}Z`} fill="url(#g-wt)" />
+                  <path d={`${d}L${end[0]},${Y(y0)}L${pts[0][0]},${Y(y0)}Z`} fill={`url(#g-${s.key})`} />
                 )}
                 <path d={d} fill="none" stroke={`var(${s.color})`} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
                 <circle cx={end[0]} cy={end[1]} r={4} fill={`var(${s.color})`} stroke="var(--bg)" strokeWidth={2} />
@@ -315,11 +360,19 @@ function Tooltip({ row, series, index, x, containerWidth }: { row: Row; series: 
 
   return (
     <div className="tip" ref={ref} style={{ left }}>
-      <div className="d">{new Date(row.t).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</div>
+      <div className="d">
+        {new Date(row.t).toLocaleString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          ...(row.kc ? {} : { hour: "numeric", minute: "2-digit" }),
+        })}
+      </div>
       {series.map((s) => (
         <div className="r" key={s.key}>
           <b style={{ background: `var(${s.color})` }} />
-          <strong>{s.key === "wt" ? `${s.value(index).toFixed(1)} lb` : s.value(index)}</strong>
+          <strong>{s.key === "wt" ? `${s.value(index).toFixed(1)} lb` : s.key === "kcal" ? `${fmtKcal(s.value(index))} kcal` : s.value(index)}</strong>
           <span>{s.name}</span>
         </div>
       ))}
@@ -486,6 +539,9 @@ function fmtDate(t: number, withYear = false) {
 }
 
 const lb = (kg: number) => kg * KG_TO_LB;
+const fmtKcal = (n: number) => Math.round(n).toLocaleString("en-US");
+/** YYYY-MM-DD in the viewer's time zone, to compare with the phone's calendar days. */
+const localDay = (t: number) => new Date(t).toLocaleDateString("en-CA");
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 function useWidth(ref: React.RefObject<HTMLDivElement | null>) {

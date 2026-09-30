@@ -10,6 +10,7 @@
   --sys: #2a78d6;
   --dia: #eb6834;
   --wt: #1baf7a;
+  --kcal: #4a3aa7;
   --good: #0ca30c;
   --warn: #fab219;
   --serious: #ec835a;
@@ -23,13 +24,13 @@
   :root:not([data-theme="light"]) {
     --bg: #111112; --surface: #19191a; --ink: #f4f4f2; --ink-2: #b9b9b3; --muted: #85857f;
     --line: #29292a; --axis: #3a3a38; --chip-bg: #232324;
-    --sys: #3987e5; --dia: #d95926; --wt: #199e70; color-scheme: dark;
+    --sys: #3987e5; --dia: #d95926; --wt: #199e70; --kcal: #9085e9; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #111112; --surface: #19191a; --ink: #f4f4f2; --ink-2: #b9b9b3; --muted: #85857f;
   --line: #29292a; --axis: #3a3a38; --chip-bg: #232324;
-  --sys: #3987e5; --dia: #d95926; --wt: #199e70; color-scheme: dark;
+  --sys: #3987e5; --dia: #d95926; --wt: #199e70; --kcal: #9085e9; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -48,6 +49,8 @@ h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
 .link:disabled { opacity: .5; cursor: default; }
 
 .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.summary.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.summary.four .value { font-size: 30px; }
 .stat { display: grid; gap: 4px; min-width: 0; }
 .label { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .value { font-family: var(--f-num); font-size: 34px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.1; }
@@ -101,8 +104,9 @@ footer { color: var(--muted); font-size: 12px; }
 
 @media (max-width: 640px) {
   .wrap { padding-block: 24px 48px; gap: 32px; }
-  .summary { grid-template-columns: 1fr 1fr; }
-  .summary .stat:last-child { grid-column: 1 / -1; }
+  .summary, .summary.four { grid-template-columns: 1fr 1fr; }
+  .summary:not(.four) .stat:last-child { grid-column: 1 / -1; }
+  .summary.four .value { font-size: 28px; }
   .value { font-size: 28px; }
   .hide-sm { display: none; }
   th.r, td.r { padding-right: 0; }
