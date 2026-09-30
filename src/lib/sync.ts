@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { and, gt, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { DEFAULT_GMAIL_QUERY } from "./env";
 import { getMessage, listMessageIds } from "./google";
@@ -21,9 +21,13 @@ export async function syncFromGmail({ full = false } = {}): Promise<SyncResult> 
   const ids = await listMessageIds(q);
   const seen = ids.length
     ? new Set(
-        (await db.select({ id: schema.processedMessages.id }).from(schema.processedMessages).where(inArray(schema.processedMessages.id, ids))).map(
-          (r) => r.id,
-        ),
+        (
+          await db
+            .select({ id: schema.processedMessages.id })
+            .from(schema.processedMessages)
+            // Emails that gave no readings are looked at again, so a parser fix picks them up.
+            .where(and(inArray(schema.processedMessages.id, ids), gt(schema.processedMessages.readingsFound, 0)))
+        ).map((r) => r.id),
       )
     : new Set<string>();
   const fresh = ids.filter((id) => !seen.has(id));
@@ -55,7 +59,10 @@ export async function syncFromGmail({ full = false } = {}): Promise<SyncResult> 
     await db
       .insert(schema.processedMessages)
       .values({ id, readingsFound: parsed.bp.length + parsed.weight.length })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: schema.processedMessages.id,
+        set: { readingsFound: parsed.bp.length + parsed.weight.length, processedAt: new Date() },
+      });
   }
 
   await setSetting("last_sync_at", startedAt.toISOString());
