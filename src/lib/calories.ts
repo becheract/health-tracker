@@ -32,3 +32,17 @@ export function caloriesFromPayload(payload: HaePayload): CalorieDay[] {
     source: [...e.sources].join(", ") || "Apple Health",
   }));
 }
+
+/**
+ * Body sent by the Apple Shortcut: { "date": "2026-09-30", "calories": 1850 }.
+ * `calories` may arrive as text with a comma decimal (French iPhone). Returns an error message when invalid.
+ */
+export function calorieDayFromShortcut(body: unknown, today: string): CalorieDay | string {
+  if (!body || typeof body !== "object") return "Body must be a JSON object";
+  const { date, calories } = body as { date?: unknown; calories?: unknown };
+  const day = date === undefined || date === "" ? today : String(date).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return `date must look like 2026-09-30, got "${String(date)}"`;
+  const kcal = typeof calories === "number" ? calories : Number(String(calories ?? "").replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(kcal) || kcal < 0 || kcal > 20000) return `calories must be a number, got "${String(calories)}"`;
+  return { day, kcal: Math.round(kcal * 10) / 10, source: "Apple Health" };
+}

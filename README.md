@@ -4,7 +4,7 @@ A private dashboard of blood pressure and weight readings, filled in automatical
 
 - **Ingest:** Gmail push notifications (Pub/Sub) call `/api/gmail/push`; the app searches Gmail for result emails, parses them and stores new readings. A daily cron renews the Gmail watch and re-syncs as a safety net. The "Sync" link on the dashboard does the same on demand.
 - **Parse:** PC Health Station emails (Shoppers Drug Mart, `noreply@e.pchealth.ca`) are read from their HTML tables: pulse, systolic, diastolic, weight, height, BMI and the reading time. Other senders fall back to a text scan that needs "mmHg" or "systolic" wording. See `src/lib/parse.ts`.
-- **Calories:** MyFitnessPal writes calories to Apple Health, and the iPhone app Health Auto Export posts them to `/api/ingest/health-auto-export` (key in an `api-key` header, `HEALTH_EXPORT_TOKEN`). One row per day; a later export of the same day replaces it.
+- **Calories:** MyFitnessPal writes calories to Apple Health, and an Apple Shortcut posts the day's total to `/api/ingest/calories` as `{"date": "2026-09-30", "calories": 1850}` with `Authorization: Bearer <CALORIES_TOKEN>`. One row per day; a later upload of the same day replaces it. (`/api/ingest/health-auto-export` accepts the Health Auto Export app's format with the same key.)
 - **Dashboard:** latest BP with AHA category, weight with 30-day change, 90-day average, one chart (blood pressure or weight; 1M / 3M / 6M / 1Y / All) and a readings log. Only `ALLOWED_EMAIL` can sign in.
 
 Stack: Next.js 15 (App Router) · Postgres via Drizzle · Google OAuth + Gmail REST · hosted on Vercel.
@@ -35,7 +35,7 @@ npm run dev
 4. **Vercel:** import this repo, add every variable from `.env.example` (generate `SESSION_SECRET`, `PUBSUB_VERIFICATION_TOKEN` and `CRON_SECRET` with `openssl rand -hex 32`), and deploy.
 5. **Connect:** open the app and sign in with Google, and tick the Gmail permission box. The first sign-in stores the Gmail connection, starts the watch and imports past result emails.
 
-6. **Calories (optional, iPhone):** in MyFitnessPal turn on writing Dietary Energy to Apple Health. In Health Auto Export (Premium) add a REST API automation: URL `https://<your-app>/api/ingest/health-auto-export`, header `api-key: <HEALTH_EXPORT_TOKEN>`, Health Metrics → Dietary Energy, JSON, aggregated by day.
+6. **Calories (optional, iPhone):** in MyFitnessPal turn on writing Dietary Energy to Apple Health, add `CALORIES_TOKEN` in Vercel, and build the Shortcut: Find Health Samples (Dietary Energy, today) → Calculate Statistics (Sum) → Get Contents of URL (POST JSON `date`, `calories`, header `Authorization: Bearer <CALORIES_TOKEN>`), run by an automation when MyFitnessPal closes.
 
 ## Notes
 

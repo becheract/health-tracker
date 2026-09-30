@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caloriesFromPayload } from "./calories";
+import { calorieDayFromShortcut, caloriesFromPayload } from "./calories";
 
 describe("caloriesFromPayload", () => {
   it("reads daily dietary energy and ignores other metrics", () => {
@@ -45,5 +45,18 @@ describe("caloriesFromPayload", () => {
   it("returns nothing for payloads without calories", () => {
     expect(caloriesFromPayload({})).toEqual([]);
     expect(caloriesFromPayload({ data: { metrics: [] } })).toEqual([]);
+  });
+});
+
+describe("calorieDayFromShortcut", () => {
+  it("accepts numbers and French-formatted text", () => {
+    expect(calorieDayFromShortcut({ date: "2026-09-30", calories: 1850 }, "2026-10-01")).toEqual({ day: "2026-09-30", kcal: 1850, source: "Apple Health" });
+    expect(calorieDayFromShortcut({ date: "2026-09-30", calories: "1 850,5" }, "2026-10-01")).toMatchObject({ kcal: 1850.5 });
+  });
+
+  it("defaults to today and rejects bad input", () => {
+    expect(calorieDayFromShortcut({ calories: 900 }, "2026-10-01")).toMatchObject({ day: "2026-10-01" });
+    expect(typeof calorieDayFromShortcut({ date: "30/09/2026", calories: 900 }, "2026-10-01")).toBe("string");
+    expect(typeof calorieDayFromShortcut({ date: "2026-09-30", calories: "lots" }, "2026-10-01")).toBe("string");
   });
 });
