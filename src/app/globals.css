@@ -110,3 +110,15 @@ footer { color: var(--muted); font-size: 12px; }
 @media (prefers-reduced-motion: no-preference) {
   .seg button { transition: background .15s, color .15s; }
 }
+
+/* Privacy and terms pages */
+.doc { max-width: 680px; gap: 24px; }
+.doc .sync a, .login .links a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--axis); }
+.doc article { display: grid; gap: 12px; color: var(--ink-2); }
+.doc article h2 { font-size: 15px; font-weight: 500; color: var(--ink); margin: 16px 0 0; }
+.doc article p, .doc article ul { margin: 0; }
+.doc article ul { padding-left: 20px; display: grid; gap: 6px; }
+.doc article a { color: var(--ink); text-underline-offset: 3px; }
+.doc code { font-family: var(--f-num); font-size: 13px; }
+.muted { color: var(--muted); font-size: 13px; }
+.login .links { display: flex; gap: 16px; justify-content: center; font-size: 13px; }

@@ -9,6 +9,10 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           Continue with Google
         </a>
         {error && <p className="error">{error}</p>}
+        <nav className="links">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+        </nav>
       </div>
     </main>
   );
