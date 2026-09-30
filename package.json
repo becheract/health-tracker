@@ -9,7 +9,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:push": "drizzle-kit push",
-    "db:seed-demo": "tsx scripts/seed-demo.mts"
+    "db:seed-demo": "tsx scripts/seed-demo.mts",
+    "db:migrate": "tsx scripts/migrate.mts",
+    "db:generate": "drizzle-kit generate",
+    "vercel-build": "tsx scripts/migrate.mts && next build"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.3",

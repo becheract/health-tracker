@@ -13,7 +13,7 @@ Stack: Next.js 15 (App Router) · Postgres via Drizzle · Google OAuth + Gmail R
 ```bash
 npm install
 cp .env.example .env.local        # fill in DATABASE_URL at least
-npm run db:push                   # create tables
+npm run db:migrate                # create tables
 npm run db:seed-demo              # optional: fake readings to look at
 npm run dev
 ```
@@ -22,7 +22,7 @@ npm run dev
 
 ## Deploy (one-time setup)
 
-1. **Database.** Create a free Postgres database (Neon, or Vercel Postgres from the Vercel dashboard). Put its connection string in `DATABASE_URL` and run `npm run db:push` once against it.
+1. **Database.** In Vercel, add a Neon Postgres database from the project's Storage tab; it sets `DATABASE_URL`. Tables are created automatically on every deploy (`vercel-build` runs `scripts/migrate.mts`). After changing `src/db/schema.ts`, run `npm run db:generate` and commit the new file in `drizzle/`.
 2. **Google Cloud project** (console.cloud.google.com):
    - Enable the **Gmail API** and **Cloud Pub/Sub API**.
    - **OAuth consent screen:** type External, add your Gmail as a test user, add scope `gmail.readonly`. Then press **Publish app**. You'll see a "Google hasn't verified this app" warning when signing in, which is expected for a personal app; staying in "Testing" makes Google expire the connection every 7 days.
