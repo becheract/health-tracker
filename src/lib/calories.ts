@@ -35,14 +35,23 @@ export function caloriesFromPayload(payload: HaePayload): CalorieDay[] {
 
 /**
  * Body sent by the Apple Shortcut: { "date": "2026-09-30", "calories": 1850 }.
- * `calories` may arrive as text with a comma decimal (French iPhone). Returns an error message when invalid.
+ * `calories` may arrive as text, English ("1,850.4") or French ("1 850,4"). Returns an error message when invalid.
  */
 export function calorieDayFromShortcut(body: unknown, today: string): CalorieDay | string {
   if (!body || typeof body !== "object") return "Body must be a JSON object";
   const { date, calories } = body as { date?: unknown; calories?: unknown };
   const day = date === undefined || date === "" ? today : String(date).trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return `date must look like 2026-09-30, got "${String(date)}"`;
-  const kcal = typeof calories === "number" ? calories : Number(String(calories ?? "").replace(/\s/g, "").replace(",", "."));
+  const kcal = typeof calories === "number" ? calories : parseLocalizedNumber(String(calories ?? ""));
   if (!Number.isFinite(kcal) || kcal < 0 || kcal > 20000) return `calories must be a number, got "${String(calories)}"`;
   return { day, kcal: Math.round(kcal * 10) / 10, source: "Apple Health" };
+}
+
+/** "1,850.4" / "1 850,4" / "1850" -> number. A lone comma followed by exactly three digits is a thousands separator. */
+function parseLocalizedNumber(raw: string): number {
+  let t = raw.replace(/[\s\u00a0\u202f]/g, "");
+  if (t.includes(",") && t.includes(".")) t = t.replace(/,/g, "");
+  else if (/^\d{1,3}(,\d{3})+$/.test(t)) t = t.replace(/,/g, "");
+  else t = t.replace(",", ".");
+  return t === "" ? NaN : Number(t);
 }

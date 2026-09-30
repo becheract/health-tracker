@@ -52,6 +52,10 @@ describe("calorieDayFromShortcut", () => {
   it("accepts numbers and French-formatted text", () => {
     expect(calorieDayFromShortcut({ date: "2026-09-30", calories: 1850 }, "2026-10-01")).toEqual({ day: "2026-09-30", kcal: 1850, source: "Apple Health" });
     expect(calorieDayFromShortcut({ date: "2026-09-30", calories: "1 850,5" }, "2026-10-01")).toMatchObject({ kcal: 1850.5 });
+    expect(calorieDayFromShortcut({ date: "2026-09-30", calories: "1,850.4" }, "2026-10-01")).toMatchObject({ kcal: 1850.4 });
+    expect(calorieDayFromShortcut({ date: "2026-09-30", calories: "1,850" }, "2026-10-01")).toMatchObject({ kcal: 1850 });
+    expect(calorieDayFromShortcut({ date: "2026-09-30", calories: "1850" }, "2026-10-01")).toMatchObject({ kcal: 1850 });
+    expect(calorieDayFromShortcut({ date: "2026-09-30", calories: 0 }, "2026-10-01")).toMatchObject({ kcal: 0 });
   });
 
   it("defaults to today and rejects bad input", () => {
