@@ -3,7 +3,7 @@
 A private dashboard of blood pressure and weight readings, filled in automatically from the result emails that pharmacy and gym BP kiosks send to Gmail.
 
 - **Ingest:** Gmail push notifications (Pub/Sub) call `/api/gmail/push`; the app searches Gmail for result emails, parses them and stores new readings. A daily cron renews the Gmail watch and re-syncs as a safety net. The "Sync" link on the dashboard does the same on demand.
-- **Parse:** PC Health Station emails (Shoppers Drug Mart, `noreply@e.pchealth.ca`) are read from their HTML tables: pulse, systolic, diastolic, weight, height, BMI and the reading time. Other senders fall back to a text scan that needs "mmHg" or "systolic" wording. See `src/lib/parse.ts`.
+- **Parse:** PC Health Station emails (Shoppers Drug Mart, `noreply@e.pchealth.ca`) are read from their HTML tables: pulse, systolic, diastolic, weight, height, BMI and the reading time. CSV attachments exported from home cuff apps (Omron Connect, Withings, iHealth, Qardio and similar) are read by column header, so emailing an export to yourself (from the Gmail account the app reads) imports every reading in it. CSVs from anyone else are ignored. Other senders fall back to a text scan that needs "mmHg", "systolic", SYS/DIA labels, or "blood pressure"/"BP" right before the numbers. See `src/lib/parse.ts` and `src/lib/csv.ts`.
 - **Calories:** MyFitnessPal writes calories to Apple Health, and an Apple Shortcut posts the day's total to `/api/ingest/calories` as `{"date": "2026-09-30", "calories": 1850}` with `Authorization: Bearer <CALORIES_TOKEN>`. One row per day; a later upload of the same day replaces it. (`/api/ingest/health-auto-export` accepts the Health Auto Export app's format with the same key.)
 - **Dashboard:** latest BP with AHA category, weight with 30-day change, 90-day average, one chart (blood pressure or weight; 1M / 3M / 6M / 1Y / All) and a readings log. Only `ALLOWED_EMAIL` can sign in.
 
@@ -41,12 +41,12 @@ npm run dev
 
 - Kiosk timestamps carry no time zone; they're read as `READINGS_TIME_ZONE` (default `America/Toronto`).
 - Duplicate "Reminder: Your results are ready" emails are harmless: readings are unique by measurement time.
-- Which emails are considered is set by `GMAIL_QUERY` (default: PC Health, PharmaSmart, lifeclinic and higi kiosk senders, or "blood pressure" in the subject). When a Walmart or GoodLife kiosk email arrives in a new format, add its sender there and its domain to `TRUSTED_SENDER_DOMAINS`, plus a parser case with a fixture in `src/lib/__fixtures__/`.
+- Which emails are considered is set by `GMAIL_QUERY` (default: PC Health, PharmaSmart, lifeclinic, higi and Pursuant kiosk senders, "blood pressure" in the subject, or a CSV attachment mentioning a cuff brand or blood pressure). When a Walmart or GoodLife kiosk email arrives in a new format, add its sender there and its domain to `TRUSTED_SENDER_DOMAINS`, plus a parser case with a fixture in `src/lib/__fixtures__/`.
 
 ## Security
 
 - Sign-in is Google OAuth (with PKCE) limited to `ALLOWED_EMAIL`; the session cookie is an HS256 JWT signed with `SESSION_SECRET` (32+ characters). Rotating `SESSION_SECRET` signs out every device.
-- Readings are only taken from senders in `TRUSTED_SENDER_DOMAINS` whose mail passes Gmail's SPF, DKIM or DMARC check, so a spoofed "blood pressure" email can't add data. Skipped emails are logged and counted in the Sync result.
+- Readings are only taken from senders in `TRUSTED_SENDER_DOMAINS` whose mail passes Gmail's SPF, DKIM or DMARC check, so a spoofed "blood pressure" email can't add data. CSV exports are the exception: they're read only from mail this Gmail account sent itself. Skipped emails are logged and counted in the Sync result.
 - The Google refresh token is stored AES-256-GCM encrypted (key from `TOKEN_ENCRYPTION_KEY`, or derived from `SESSION_SECRET`).
 - Cron, Pub/Sub and phone uploads each check their own secret in constant time; phone uploads accept it only in a header, never in the URL.
 - Cross-site POSTs are refused, and every page is sent with a strict Content-Security-Policy, HSTS and `frame-ancestors 'none'`.

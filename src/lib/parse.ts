@@ -1,4 +1,5 @@
 import { parse as parseHtml } from "node-html-parser";
+import { parseReadingsCsv } from "./csv";
 
 export type BpReading = {
   measuredAt: Date;
@@ -16,11 +17,17 @@ export type WeightReading = {
   category: string | null;
 };
 
-export type ParsedEmail = { bp: BpReading[]; weight: WeightReading[] };
+// `source` names the device or app when the email itself says (e.g. an Omron export).
+export type ParsedEmail = { bp: BpReading[]; weight: WeightReading[]; source?: string };
+
+export type Attachment = { filename: string; content: string };
 
 export type EmailInput = {
   html?: string | null;
   text?: string | null;
+  subject?: string;
+  // CSV attachments, e.g. an export shared from the Omron Connect or Withings app.
+  attachments?: Attachment[];
   // When the email arrived; used when the body carries no reading time of its own.
   receivedAt: Date;
 };
@@ -29,11 +36,21 @@ const LB_TO_KG = 0.45359237;
 const DEFAULT_TIME_ZONE = "America/Toronto";
 
 /**
- * Extract blood pressure and weight readings from a kiosk result email.
- * Table-based emails (PC Health Station) are read cell by cell; anything else
- * falls back to a conservative text scan.
+ * Extract blood pressure and weight readings from a result email.
+ * CSV exports from home cuff apps are read by column header, table-based kiosk emails
+ * (PC Health Station) cell by cell, and anything else falls back to a conservative text scan.
  */
 export function parseResultEmail(input: EmailInput, timeZone = DEFAULT_TIME_ZONE): ParsedEmail {
+  const fromCsv: ParsedEmail = { bp: [], weight: [] };
+  for (const a of input.attachments ?? []) {
+    const r = parseReadingsCsv(a.content, timeZone);
+    if (!r.bp.length && !r.weight.length) continue;
+    fromCsv.bp.push(...r.bp);
+    fromCsv.weight.push(...r.weight);
+    fromCsv.source ??= exportSource(`${a.filename} ${input.subject ?? ""} ${a.content.slice(0, 300)}`);
+  }
+  if (fromCsv.bp.length || fromCsv.weight.length) return fromCsv;
+
   if (input.html) {
     const fromTables = parseResultTables(input.html, timeZone);
     if (fromTables.bp.length || fromTables.weight.length) return fromTables;
@@ -90,19 +107,34 @@ export function parseResultTables(html: string, timeZone = DEFAULT_TIME_ZONE): P
   return out;
 }
 
-/** Fallback for other kiosks: needs explicit BP wording so newsletters don't produce readings. */
+/** Brand behind a CSV export, from its file name, the email subject or its header row. */
+export function exportSource(hint: string): string {
+  const h = hint.toLowerCase();
+  if (h.includes("omron") || h.includes("truread")) return "Omron";
+  if (h.includes("withings")) return "Withings";
+  if (h.includes("ihealth")) return "iHealth";
+  if (h.includes("qardio")) return "Qardio";
+  return "CSV import";
+}
+
+/**
+ * Fallback for other kiosks and apps: needs explicit BP wording (mmHg, systolic/diastolic,
+ * SYS/DIA labels, or "blood pressure"/"BP" right before the numbers) so newsletters don't produce readings.
+ */
 export function parseFreeText(text: string, receivedAt: Date): ParsedEmail {
   const out: ParsedEmail = { bp: [], weight: [] };
   const t = text.replace(/\s+/g, " ");
 
   const bp =
     t.match(/(\d{2,3})\s*\/\s*(\d{2,3})\s*mm\s?hg/i) ??
-    t.match(/systolic\D{0,20}(\d{2,3})\D{0,40}diastolic\D{0,20}(\d{2,3})/i);
+    t.match(/systolic\D{0,20}(\d{2,3})\D{0,40}diastolic\D{0,20}(\d{2,3})/i) ??
+    t.match(/\bSYS\b\D{0,12}(\d{2,3})\D{0,30}\bDIA\b\D{0,12}(\d{2,3})/i) ??
+    t.match(/(?:blood pressure|\bBP\b)[^0-9/]{0,25}(\d{2,3})\s*\/\s*(\d{2,3})\b/i);
   if (bp) {
     const systolic = Number(bp[1]);
     const diastolic = Number(bp[2]);
     if (plausibleBp(systolic, diastolic)) {
-      const pulse = t.match(/(?:pulse|heart rate)\D{0,20}(\d{2,3})/i);
+      const pulse = t.match(/(?:pulse|heart rate|\bPUL\b)\D{0,20}(\d{2,3})/i);
       out.bp.push({ measuredAt: receivedAt, systolic, diastolic, pulse: pulse ? Number(pulse[1]) : null, category: null });
     }
   }

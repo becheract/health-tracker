@@ -53,3 +53,19 @@ describe("free-text fallback", () => {
     expect(r.weight[0]).toMatchObject({ weightKg: 88.5 });
   });
 });
+
+describe("free-text fallback, other layouts", () => {
+  it("reads SYS/DIA/PUL labels as printed by many cuffs and kiosks", () => {
+    const r = parseFreeText("Your reading SYS 131 mmHg DIA 84 mmHg PUL 72 /min", receivedAt);
+    expect(r.bp[0]).toMatchObject({ systolic: 131, diastolic: 84, pulse: 72 });
+  });
+
+  it("reads 'blood pressure' or 'BP' followed by a fraction without mmHg", () => {
+    expect(parseFreeText("Today's BP: 122/80", receivedAt).bp[0]).toMatchObject({ systolic: 122, diastolic: 80 });
+    expect(parseFreeText("Blood pressure was 126 / 83 today", receivedAt).bp[0]).toMatchObject({ systolic: 126, diastolic: 83 });
+  });
+
+  it("ignores fractions without blood pressure wording", () => {
+    expect(parseFreeText("Open 24/7, call 905/555-0100 or score 120/80 on the quiz", receivedAt).bp).toEqual([]);
+  });
+});
