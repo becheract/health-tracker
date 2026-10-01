@@ -38,16 +38,23 @@ export async function syncFromGmail({ full = false } = {}): Promise<SyncResult> 
 
   for (const id of fresh) {
     const email = await getMessage(id);
-    const sender = checkSender(email.from, email.authResults);
-    if (!sender.ok) {
+    // Mail you sent yourself (Gmail's SENT label, which outsiders can't set) is trusted for its CSV exports;
+    // anything else must come from a trusted kiosk domain, and only its body is read.
+    const sender = email.sentByOwner ? null : checkSender(email.from, email.authResults);
+    if (sender && !sender.ok) {
       // Stored with no readings, so it is looked at again if TRUSTED_SENDER_DOMAINS changes.
       console.warn(`skipped email ${id}: ${sender.reason}`);
       result.untrusted++;
       await db.insert(schema.processedMessages).values({ id, readingsFound: 0 }).onConflictDoNothing();
       continue;
     }
-    const parsed = parseResultEmail(email, timeZone);
-    const source = sourceLabel(email.from);
+    const parsed = parseResultEmail(
+      email.sentByOwner
+        ? { subject: email.subject, attachments: email.attachments, receivedAt: email.receivedAt }
+        : { ...email, attachments: [] },
+      timeZone,
+    );
+    const source = parsed.source ?? sourceLabel(email.from);
 
     if (parsed.bp.length) {
       const added = await db
