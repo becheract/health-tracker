@@ -7,6 +7,16 @@ import { setSecretSetting } from "@/lib/settings";
 import { syncFromGmail } from "@/lib/sync";
 
 export async function GET(req: NextRequest) {
+  try {
+    return await handle(req);
+  } catch (e) {
+    // An uncaught error here is an empty 500, which browsers save as a file named "callback".
+    console.error("sign-in callback failed", e);
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent("Sign-in failed on our side, try again.")}`, req.nextUrl.origin));
+  }
+}
+
+async function handle(req: NextRequest) {
   const url = req.nextUrl;
   const fail = (reason: string) => NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(reason)}`, env("APP_URL")));
 
