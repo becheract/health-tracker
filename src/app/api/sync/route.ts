@@ -11,6 +11,9 @@ export async function POST(req: NextRequest) {
     if (message.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT")) {
       return NextResponse.json({ error: "Gmail access wasn't granted. Sign out, sign in again and tick the Gmail box." }, { status: 403 });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (message.startsWith("Gmail is not connected")) return NextResponse.json({ error: message }, { status: 409 });
+    // Google's raw error bodies stay in the server log.
+    console.error("manual sync failed", e);
+    return NextResponse.json({ error: "Sync failed. Try again, or sign out and back in." }, { status: 500 });
   }
 }

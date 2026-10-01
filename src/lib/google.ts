@@ -1,5 +1,5 @@
 import { env } from "./env";
-import { getSetting, setSetting } from "./settings";
+import { getSecretSetting, setSetting } from "./settings";
 
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const SCOPES = ["openid", "email", GMAIL_SCOPE];
@@ -9,7 +9,7 @@ export function redirectUri() {
   return `${env("APP_URL").replace(/\/$/, "")}/api/auth/google/callback`;
 }
 
-export function authUrl(state: string) {
+export function authUrl(state: string, codeChallenge: string) {
   const params = new URLSearchParams({
     client_id: env("GOOGLE_CLIENT_ID"),
     redirect_uri: redirectUri(),
@@ -18,6 +18,8 @@ export function authUrl(state: string) {
     access_type: "offline",
     prompt: "consent",
     state,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
@@ -38,8 +40,8 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
   return res.json();
 }
 
-export function exchangeCode(code: string) {
-  return tokenRequest({ code, grant_type: "authorization_code", redirect_uri: redirectUri() });
+export function exchangeCode(code: string, codeVerifier: string) {
+  return tokenRequest({ code, code_verifier: codeVerifier, grant_type: "authorization_code", redirect_uri: redirectUri() });
 }
 
 /** Email claim from the id_token Google just handed us over TLS. */
@@ -52,7 +54,7 @@ export function emailFromIdToken(idToken: string): string | null {
 let cached: { refresh: string; token: string; expiresAt: number } | null = null;
 
 export async function accessToken(): Promise<string> {
-  const refresh = await getSetting("google_refresh_token");
+  const refresh = await getSecretSetting("google_refresh_token");
   if (!refresh) throw new Error("Gmail is not connected yet. Sign in once to connect it.");
   if (cached && cached.refresh === refresh && cached.expiresAt > Date.now() + 60_000) return cached.token;
   const t = await tokenRequest({ refresh_token: refresh, grant_type: "refresh_token" });
@@ -89,6 +91,8 @@ export type FetchedEmail = {
   id: string;
   from: string;
   subject: string;
+  // First Authentication-Results header, the one Gmail itself added on arrival.
+  authResults: string;
   receivedAt: Date;
   html: string | null;
   text: string | null;
@@ -107,6 +111,7 @@ export async function getMessage(id: string): Promise<FetchedEmail> {
     id,
     from: header("from"),
     subject: header("subject"),
+    authResults: header("authentication-results"),
     receivedAt: new Date(Number(m.internalDate)),
     html: findPart(m.payload, "text/html"),
     text: findPart(m.payload, "text/plain"),

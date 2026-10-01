@@ -3,9 +3,10 @@ import { db, schema } from "@/db";
 import { DEFAULT_GMAIL_QUERY } from "./env";
 import { getMessage, listMessageIds } from "./google";
 import { parseResultEmail } from "./parse";
+import { checkSender } from "./sender";
 import { getSetting, setSetting } from "./settings";
 
-export type SyncResult = { scanned: number; newMessages: number; bpAdded: number; weightAdded: number };
+export type SyncResult = { scanned: number; newMessages: number; bpAdded: number; weightAdded: number; untrusted: number };
 
 /**
  * Pull result emails from Gmail and store any readings in them.
@@ -32,13 +33,27 @@ export async function syncFromGmail({ full = false } = {}): Promise<SyncResult> 
     : new Set<string>();
   const fresh = ids.filter((id) => !seen.has(id));
 
-  const result: SyncResult = { scanned: ids.length, newMessages: fresh.length, bpAdded: 0, weightAdded: 0 };
+  const result: SyncResult = { scanned: ids.length, newMessages: fresh.length, bpAdded: 0, weightAdded: 0, untrusted: 0 };
   const timeZone = process.env.READINGS_TIME_ZONE || "America/Toronto";
 
   for (const id of fresh) {
     const email = await getMessage(id);
-    // CSV exports are only trusted when you emailed them to yourself, so a stranger's attachment can't add readings.
-    const parsed = parseResultEmail({ ...email, attachments: email.sentByOwner ? email.attachments : [] }, timeZone);
+    // Mail you sent yourself (Gmail's SENT label, which outsiders can't set) is trusted for its CSV exports;
+    // anything else must come from a trusted kiosk domain, and only its body is read.
+    const sender = email.sentByOwner ? null : checkSender(email.from, email.authResults);
+    if (sender && !sender.ok) {
+      // Stored with no readings, so it is looked at again if TRUSTED_SENDER_DOMAINS changes.
+      console.warn(`skipped email ${id}: ${sender.reason}`);
+      result.untrusted++;
+      await db.insert(schema.processedMessages).values({ id, readingsFound: 0 }).onConflictDoNothing();
+      continue;
+    }
+    const parsed = parseResultEmail(
+      email.sentByOwner
+        ? { subject: email.subject, attachments: email.attachments, receivedAt: email.receivedAt }
+        : { ...email, attachments: [] },
+      timeZone,
+    );
     const source = parsed.source ?? sourceLabel(email.from);
 
     if (parsed.bp.length) {
