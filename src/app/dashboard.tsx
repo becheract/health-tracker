@@ -474,7 +474,8 @@ function SyncButton({ lastSync }: { lastSync: string | null }) {
           setBusy(false);
           if (!res.ok) return setMsg(body.error ?? "Sync failed");
           const added = (body.bpAdded ?? 0) + (body.weightAdded ?? 0);
-          setMsg(added ? `${added} new` : "Up to date");
+          const skipped = body.untrusted ? ` · ${body.untrusted} from an unverified sender skipped` : "";
+          setMsg((added ? `${added} new` : "Up to date") + skipped);
           router.refresh();
         }}
       >
