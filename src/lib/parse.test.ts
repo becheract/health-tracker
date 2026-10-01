@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parseFreeText, parseLocalDateTime, parseResultEmail } from "./parse";
 
 const fixture = readFileSync(path.join(__dirname, "__fixtures__/pchealth.html"), "utf8");
-const receivedAt = new Date("2026-09-30T17:16:53Z");
+const receivedAt = new Date("2026-01-15T15:00:53Z");
 
 describe("PC Health Station email", () => {
   const parsed = parseResultEmail({ html: fixture, receivedAt });
@@ -12,10 +12,10 @@ describe("PC Health Station email", () => {
   it("reads the blood pressure row by column, not by concatenated text", () => {
     expect(parsed.bp).toEqual([
       {
-        measuredAt: new Date("2026-09-30T17:16:24Z"),
-        systolic: 118,
-        diastolic: 72,
-        pulse: 78,
+        measuredAt: new Date("2026-01-15T15:00:00Z"),
+        systolic: 120,
+        diastolic: 80,
+        pulse: 70,
         category: "optimal",
       },
     ]);
@@ -24,11 +24,11 @@ describe("PC Health Station email", () => {
   it("reads weight in kg with height and BMI", () => {
     expect(parsed.weight).toEqual([
       {
-        measuredAt: new Date("2026-09-30T17:16:41Z"),
-        weightKg: 86.18,
-        heightCm: 180,
-        bmi: 26.3,
-        category: "overweight",
+        measuredAt: new Date("2026-01-15T15:00:20Z"),
+        weightKg: 68.04,
+        heightCm: 170,
+        bmi: 23.5,
+        category: "normal",
       },
     ]);
   });
