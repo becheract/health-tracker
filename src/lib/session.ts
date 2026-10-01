@@ -3,12 +3,18 @@ import { jwtVerify, SignJWT } from "jose";
 export const SESSION_COOKIE = "ht_session";
 const MAX_AGE_S = 60 * 60 * 24 * 30;
 const ISSUER = "health-tracker";
-// A short secret could be guessed offline from any session cookie.
+// A short secret could be guessed offline from any session cookie, so warn about it.
+// Not fatal: refusing it locked the owner out of sign-in.
 const MIN_SECRET_LENGTH = 32;
+let warned = false;
 
 function key() {
   const secret = process.env.SESSION_SECRET ?? "";
-  if (secret.length < MIN_SECRET_LENGTH) throw new Error(`SESSION_SECRET must be at least ${MIN_SECRET_LENGTH} characters`);
+  if (!secret) throw new Error("Missing environment variable SESSION_SECRET");
+  if (secret.length < MIN_SECRET_LENGTH && !warned) {
+    warned = true;
+    console.warn(`SESSION_SECRET is shorter than ${MIN_SECRET_LENGTH} characters; replace it with \`openssl rand -hex 32\``);
+  }
   return new TextEncoder().encode(secret);
 }
 

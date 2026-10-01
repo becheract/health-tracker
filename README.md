@@ -45,7 +45,7 @@ npm run dev
 
 ## Security
 
-- Sign-in is Google OAuth (with PKCE) limited to `ALLOWED_EMAIL`; the session cookie is an HS256 JWT signed with `SESSION_SECRET` (32+ characters). Rotating `SESSION_SECRET` signs out every device.
+- Sign-in is Google OAuth (with PKCE) limited to `ALLOWED_EMAIL`; the session cookie is an HS256 JWT signed with `SESSION_SECRET` (use 32+ characters; shorter ones log a warning). Rotating `SESSION_SECRET` signs out every device.
 - Readings are only taken from senders in `TRUSTED_SENDER_DOMAINS` whose mail passes Gmail's SPF, DKIM or DMARC check, so a spoofed "blood pressure" email can't add data. Skipped emails are logged and counted in the Sync result.
 - The Google refresh token is stored AES-256-GCM encrypted (key from `TOKEN_ENCRYPTION_KEY`, or derived from `SESSION_SECRET`).
 - Cron, Pub/Sub and phone uploads each check their own secret in constant time; phone uploads accept it only in a header, never in the URL.
