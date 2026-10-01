@@ -82,10 +82,21 @@ export async function listMessageIds(q: string): Promise<string[]> {
   return ids;
 }
 
-type Part = { mimeType: string; body?: { data?: string }; parts?: Part[] };
+type Part = { mimeType: string; filename?: string; body?: { data?: string; attachmentId?: string; size?: number }; parts?: Part[] };
 type Message = { id: string; internalDate: string; payload: Part & { headers: { name: string; value: string }[] } };
 
-export type FetchedEmail = { id: string; from: string; subject: string; receivedAt: Date; html: string | null; text: string | null };
+export type FetchedEmail = {
+  id: string;
+  from: string;
+  subject: string;
+  receivedAt: Date;
+  html: string | null;
+  text: string | null;
+  attachments: { filename: string; content: string }[];
+};
+
+// Years of twice-daily home readings fit well under this.
+const MAX_CSV_BYTES = 2_000_000;
 
 export async function getMessage(id: string): Promise<FetchedEmail> {
   const m = await gmail<Message>(`/messages/${id}?format=full`);
@@ -97,7 +108,26 @@ export async function getMessage(id: string): Promise<FetchedEmail> {
     receivedAt: new Date(Number(m.internalDate)),
     html: findPart(m.payload, "text/html"),
     text: findPart(m.payload, "text/plain"),
+    attachments: await csvAttachments(id, m.payload),
   };
+}
+
+/** CSV files attached to the message (readings exported from a home cuff app). */
+async function csvAttachments(messageId: string, payload: Part) {
+  const found: Part[] = [];
+  const walk = (p: Part) => {
+    if (p.filename && (/\.csv$/i.test(p.filename) || p.mimeType === "text/csv") && (p.body?.size ?? 0) <= MAX_CSV_BYTES) found.push(p);
+    p.parts?.forEach(walk);
+  };
+  walk(payload);
+  return Promise.all(
+    found.map(async (p) => {
+      const data =
+        p.body?.data ??
+        (await gmail<{ data: string }>(`/messages/${messageId}/attachments/${p.body!.attachmentId}`)).data;
+      return { filename: p.filename!, content: Buffer.from(data, "base64url").toString("utf8") };
+    }),
+  );
 }
 
 function findPart(part: Part, mimeType: string): string | null {

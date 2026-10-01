@@ -38,7 +38,7 @@ export async function syncFromGmail({ full = false } = {}): Promise<SyncResult> 
   for (const id of fresh) {
     const email = await getMessage(id);
     const parsed = parseResultEmail(email, timeZone);
-    const source = sourceLabel(email.from);
+    const source = parsed.source ?? sourceLabel(email.from);
 
     if (parsed.bp.length) {
       const added = await db
