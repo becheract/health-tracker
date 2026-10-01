@@ -37,7 +37,8 @@ export async function syncFromGmail({ full = false } = {}): Promise<SyncResult> 
 
   for (const id of fresh) {
     const email = await getMessage(id);
-    const parsed = parseResultEmail(email, timeZone);
+    // CSV exports are only trusted when you emailed them to yourself, so a stranger's attachment can't add readings.
+    const parsed = parseResultEmail({ ...email, attachments: email.sentByOwner ? email.attachments : [] }, timeZone);
     const source = parsed.source ?? sourceLabel(email.from);
 
     if (parsed.bp.length) {

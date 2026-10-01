@@ -83,7 +83,7 @@ export async function listMessageIds(q: string): Promise<string[]> {
 }
 
 type Part = { mimeType: string; filename?: string; body?: { data?: string; attachmentId?: string; size?: number }; parts?: Part[] };
-type Message = { id: string; internalDate: string; payload: Part & { headers: { name: string; value: string }[] } };
+type Message = { id: string; internalDate: string; labelIds?: string[]; payload: Part & { headers: { name: string; value: string }[] } };
 
 export type FetchedEmail = {
   id: string;
@@ -92,6 +92,8 @@ export type FetchedEmail = {
   receivedAt: Date;
   html: string | null;
   text: string | null;
+  // Gmail puts SENT only on mail this account sent itself, which outside senders can't fake.
+  sentByOwner: boolean;
   attachments: { filename: string; content: string }[];
 };
 
@@ -108,6 +110,7 @@ export async function getMessage(id: string): Promise<FetchedEmail> {
     receivedAt: new Date(Number(m.internalDate)),
     html: findPart(m.payload, "text/html"),
     text: findPart(m.payload, "text/plain"),
+    sentByOwner: m.labelIds?.includes("SENT") ?? false,
     attachments: await csvAttachments(id, m.payload),
   };
 }
