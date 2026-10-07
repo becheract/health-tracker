@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { monthGrid, shiftMonth } from "@/lib/calorie-calendar";
-import { calorieWeek, MAX_DAILY_TARGET, MIN_DAILY_TARGET } from "@/lib/calorie-week";
+import { calorieWeek, weekForecast, MAX_DAILY_TARGET, MIN_DAILY_TARGET } from "@/lib/calorie-week";
 import type { BpPoint, CaloriePoint, WeightPoint } from "@/lib/readings";
 
 const KG_TO_LB = 2.2046226218;
@@ -19,9 +19,9 @@ const RANGES: { value: Range; label: string }[] = [
   { value: 0, label: "All" },
 ];
 
-type Props = { bp: BpPoint[]; weight: WeightPoint[]; calories: CaloriePoint[]; dailyTarget: number; lastSync: string | null; connected: boolean; now: number };
+type Props = { bp: BpPoint[]; weight: WeightPoint[]; calories: CaloriePoint[]; dailyTarget: number; maintenance: number | null; lastSync: string | null; connected: boolean; now: number };
 
-export default function Dashboard({ bp, weight, calories, dailyTarget, lastSync, connected, now }: Props) {
+export default function Dashboard({ bp, weight, calories, dailyTarget, maintenance, lastSync, connected, now }: Props) {
   const [metric, setMetric] = useStored<Metric>("vitals.metric", "bp", (v) => v === "bp" || v === "wt" || v === "kcal");
   const [range, setRange] = useStored<Range>("vitals.range", 6, (v) => RANGES.some((r) => r.value === v));
   const lastReading = Math.max(bp.at(-1)?.t ?? 0, weight.at(-1)?.t ?? 0);
@@ -46,7 +46,7 @@ export default function Dashboard({ bp, weight, calories, dailyTarget, lastSync,
 
       <Summary bp={bp} weight={weight} calories={calories} now={now} />
 
-      {calories.length > 0 && <CalorieBudget calories={calories} dailyTarget={dailyTarget} now={now} />}
+      {calories.length > 0 && <CalorieBudget calories={calories} dailyTarget={dailyTarget} maintenance={maintenance} now={now} />}
 
       <section className="panel" aria-label="Trend">
         <div className="controls">
@@ -154,8 +154,19 @@ function Summary({ bp, weight, calories, now }: { bp: BpPoint[]; weight: WeightP
 
 /* ---------- Weekly calorie budget ---------- */
 
-function CalorieBudget({ calories, dailyTarget, now }: { calories: CaloriePoint[]; dailyTarget: number; now: number }) {
+function CalorieBudget({
+  calories,
+  dailyTarget,
+  maintenance,
+  now,
+}: {
+  calories: CaloriePoint[];
+  dailyTarget: number;
+  maintenance: number | null;
+  now: number;
+}) {
   const w = calorieWeek(calories, localDay(now), dailyTarget);
+  const f = maintenance === null ? null : weekForecast(calories, localDay(now), maintenance);
   const over = w.left < 0;
   const ahead = w.eaten - w.pace; // > 0: eating faster than the budget allows so far
   const pct = (n: number) => `${Math.min(100, (n / w.budget) * 100).toFixed(2)}%`;
@@ -171,7 +182,7 @@ function CalorieBudget({ calories, dailyTarget, now }: { calories: CaloriePoint[
         <h2>
           This week <span className="muted">{fmtRange(w.start, w.end)}</span>
         </h2>
-        <TargetEditor dailyTarget={dailyTarget} />
+        <KcalSetting label="Budget" field="Daily target" value={dailyTarget} />
       </div>
       <div className="value">
         {fmtKcal(w.eaten)}
@@ -198,6 +209,20 @@ function CalorieBudget({ calories, dailyTarget, now }: { calories: CaloriePoint[
             {fmtKcal(w.left)} left · about {fmtKcal(w.perDayLeft)}/day {w.daysIn === 7 ? "today" : `for ${8 - w.daysIn} days`}
           </span>
         )}
+      </div>
+      <div className="sub" title="Calories eaten versus maintenance, at about 3,500 kcal per pound">
+        {maintenance === null ? (
+          <span>Set your maintenance calories to see a predicted weight change for the week.</span>
+        ) : f ? (
+          <span>
+            Predicted this week:{" "}
+            <strong className="n">{f.lb === 0 ? "no change" : `${f.lb < 0 ? "↓" : "↑"} ${Math.abs(f.lb).toFixed(1)} lb`}</strong> at your
+            average of {fmtKcal(f.avgPerDay)} kcal/day
+          </span>
+        ) : (
+          <span>A weight prediction shows from Tuesday, once a full day is logged.</span>
+        )}
+        <KcalSetting kind="maintenance" label="Maintenance" field="Maintenance" value={maintenance} />
       </div>
     </section>
   );
@@ -282,18 +307,19 @@ function CalorieCalendar({ calories, dailyTarget, now }: { calories: CaloriePoin
   );
 }
 
-function TargetEditor({ dailyTarget }: { dailyTarget: number }) {
+/** Inline-editable kcal/day setting. Maintenance has no default, so it shows "Set" until saved. */
+function KcalSetting({ kind = "target", label, field, value }: { kind?: "target" | "maintenance"; label: string; field: string; value: number | null }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(String(dailyTarget));
+  const [draft, setDraft] = useState(String(value ?? ""));
   const [error, setError] = useState<string | null>(null);
 
   if (!editing) {
     return (
       <span className="sync">
-        Budget {fmtKcal(dailyTarget)} kcal/day
-        <button className="link" onClick={() => (setValue(String(dailyTarget)), setError(null), setEditing(true))}>
-          Edit
+        {value !== null && `${label} ${fmtKcal(value)} kcal/day`}
+        <button className="link" onClick={() => (setDraft(String(value ?? "")), setError(null), setEditing(true))}>
+          {value === null ? `Set ${label.toLowerCase()}` : "Edit"}
         </button>
       </span>
     );
@@ -303,10 +329,10 @@ function TargetEditor({ dailyTarget }: { dailyTarget: number }) {
       className="sync"
       onSubmit={async (e) => {
         e.preventDefault();
-        const res = await fetch("/api/settings/calorie-target", {
+        const res = await fetch(`/api/settings/calorie-target${kind === "maintenance" ? "?kind=maintenance" : ""}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ kcal: Number(value) }),
+          body: JSON.stringify({ kcal: Number(draft) }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) return setError(body.error ?? "Couldn't save");
@@ -315,7 +341,7 @@ function TargetEditor({ dailyTarget }: { dailyTarget: number }) {
       }}
     >
       <label>
-        Daily target{" "}
+        {field}{" "}
         <input
           className="num"
           type="number"
@@ -323,9 +349,9 @@ function TargetEditor({ dailyTarget }: { dailyTarget: number }) {
           min={MIN_DAILY_TARGET}
           max={MAX_DAILY_TARGET}
           step={50}
-          value={value}
+          value={draft}
           autoFocus
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => setDraft(e.target.value)}
         />{" "}
         kcal
       </label>
