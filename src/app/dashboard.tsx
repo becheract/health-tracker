@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { monthGrid, shiftMonth } from "@/lib/calorie-calendar";
 import { calorieWeek, MAX_DAILY_TARGET, MIN_DAILY_TARGET } from "@/lib/calorie-week";
 import type { BpPoint, CaloriePoint, WeightPoint } from "@/lib/readings";
 
@@ -46,6 +47,8 @@ export default function Dashboard({ bp, weight, calories, dailyTarget, lastSync,
       <Summary bp={bp} weight={weight} calories={calories} now={now} />
 
       {calories.length > 0 && <CalorieBudget calories={calories} dailyTarget={dailyTarget} now={now} />}
+
+      {calories.length > 0 && <CalorieCalendar calories={calories} dailyTarget={dailyTarget} now={now} />}
 
       <section className="panel" aria-label="Trend">
         <div className="controls">
@@ -196,6 +199,85 @@ function CalorieBudget({ calories, dailyTarget, now }: { calories: CaloriePoint[
             {fmtKcal(w.left)} left · about {fmtKcal(w.perDayLeft)}/day {w.daysIn === 7 ? "today" : `for ${8 - w.daysIn} days`}
           </span>
         )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Monthly calorie calendar ---------- */
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function CalorieCalendar({ calories, dailyTarget, now }: { calories: CaloriePoint[]; dailyTarget: number; now: number }) {
+  const today = localDay(now);
+  const [ym, setYm] = useState<[number, number]>([Number(today.slice(0, 4)), Number(today.slice(5, 7))]);
+  const byDay = useMemo(() => new Map(calories.map((c) => [c.day, c.kcal])), [calories]);
+  const [year, month] = ym;
+  const prefix = `${year}-${String(month).padStart(2, "0")}`;
+  const logged = calories.filter((c) => c.day.startsWith(prefix));
+  const total = logged.reduce((a, c) => a + c.kcal, 0);
+  const first = calories[0]?.day.slice(0, 7) ?? prefix;
+  const title = new Date(year, month - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  return (
+    <section className="cal" aria-label="Calories by day">
+      <div className="chart-head">
+        <h2>
+          {title}
+          {logged.length > 0 && (
+            <span className="muted">
+              {fmtKcal(total / logged.length)} kcal/day avg · {logged.length} {logged.length === 1 ? "day" : "days"} logged
+            </span>
+          )}
+        </h2>
+        <div className="sync">
+          <button className="link" disabled={prefix <= first} onClick={() => setYm(shiftMonth(year, month, -1))} aria-label="Previous month">
+            ← Prev
+          </button>
+          <button className="link" disabled={prefix >= today.slice(0, 7)} onClick={() => setYm(shiftMonth(year, month, 1))} aria-label="Next month">
+            Next →
+          </button>
+        </div>
+      </div>
+      <div className="cal-grid" role="grid">
+        {WEEKDAYS.map((d) => (
+          <div key={d} className="cal-wd" role="columnheader">
+            {d}
+          </div>
+        ))}
+        {monthGrid(year, month)
+          .flat()
+          .map((day, i) => {
+            if (!day) return <div key={`pad-${i}`} className="cal-day pad" aria-hidden="true" />;
+            const kcal = byDay.get(day);
+            const over = kcal !== undefined && kcal > dailyTarget;
+            return (
+              <div
+                key={day}
+                role="gridcell"
+                className={`cal-day${day === today ? " today" : ""}${day > today ? " future" : ""}`}
+                aria-label={`${day}: ${kcal === undefined ? "nothing logged" : `${fmtKcal(kcal)} kcal`}`}
+              >
+                <span className="cal-n">{Number(day.slice(8))}</span>
+                {kcal !== undefined && (
+                  <span className="cal-k">
+                    <i style={{ background: `var(${over ? "--serious" : "--good"})` }} />
+                    {fmtKcal(kcal)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+      </div>
+      <div className="sub">
+        <span className="chip">
+          <i style={{ background: "var(--good)" }} />
+          At or under {fmtKcal(dailyTarget)} kcal
+        </span>
+        <span className="chip">
+          <i style={{ background: "var(--serious)" }} />
+          Over
+        </span>
       </div>
     </section>
   );
