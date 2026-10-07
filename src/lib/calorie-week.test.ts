@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calorieWeek, parseDailyTarget } from "./calorie-week";
+import { calorieWeek, parseDailyTarget, parseMaintenance, weekForecast } from "./calorie-week";
 
 const days = [
   { day: "2026-10-04", kcal: 3000 }, // previous Sunday, not counted
@@ -37,5 +37,37 @@ describe("parseDailyTarget", () => {
     expect(parseDailyTarget("abc")).toBe(2000);
     expect(parseDailyTarget("100")).toBe(2000);
     expect(parseDailyTarget("2200")).toBe(2200);
+  });
+});
+
+describe("weekForecast", () => {
+  it("projects the week from finished days and converts the gap to pounds", () => {
+    // Mon 1,800 + Tue 2,100.4 -> avg 1,950.2/day -> 13,651 for the week vs 14,000 maintenance -> 349 kcal deficit
+    const f = weekForecast(days, "2026-10-07", 2000)!;
+    expect(f.avgPerDay).toBe(1950);
+    expect(f.projected).toBe(13651);
+    expect(f.lb).toBe(-0.1);
+  });
+
+  it("measures against maintenance, so eating at a deficit target predicts a loss", () => {
+    const f = weekForecast(days, "2026-10-07", 2500)!; // 13,651 vs 17,500
+    expect(f.lb).toBe(-1.1);
+  });
+
+  it("predicts a gain when eating over maintenance", () => {
+    const f = weekForecast([{ day: "2026-10-05", kcal: 3000 }], "2026-10-06", 2000)!;
+    expect(f.lb).toBe(2); // 7,000 kcal over
+  });
+
+  it("has nothing to go on on Monday", () => {
+    expect(weekForecast(days, "2026-10-05", 2000)).toBeNull();
+  });
+});
+
+describe("parseMaintenance", () => {
+  it("is null until set", () => {
+    expect(parseMaintenance(null)).toBeNull();
+    expect(parseMaintenance("")).toBeNull();
+    expect(parseMaintenance("2400")).toBe(2400);
   });
 });

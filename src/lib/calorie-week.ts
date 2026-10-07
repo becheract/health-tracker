@@ -46,6 +46,44 @@ export function parseDailyTarget(raw: string | null | undefined): number {
   return Number.isInteger(n) && n >= MIN_DAILY_TARGET && n <= MAX_DAILY_TARGET ? n : DEFAULT_DAILY_TARGET;
 }
 
+/** Saved maintenance calories, or null when unset or out of range. */
+export function parseMaintenance(raw: string | null | undefined): number | null {
+  const n = Number(raw);
+  return raw && Number.isInteger(n) && n >= MIN_DAILY_TARGET && n <= MAX_DAILY_TARGET ? n : null;
+}
+
 const parseDay = (s: string) => new Date(`${s}T00:00:00Z`);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 864e5);
 const fmtDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Rule of thumb: about 3,500 kcal of surplus or deficit per pound of body weight. */
+export const KCAL_PER_LB = 3500;
+
+export type WeekForecast = {
+  /** Average kcal/day over the days of this week logged before today. */
+  avgPerDay: number;
+  /** This week's total if the rest of the week follows that average. */
+  projected: number;
+  /** Predicted weight change in lb for the week; negative is a loss. */
+  lb: number;
+};
+
+/**
+ * Predicted weight change for the Monday–Sunday week containing `today`, from calories eaten versus maintenance
+ * (calories burned per day), not versus the target, which may already include a planned deficit.
+ * Finished logged days count as eaten; today and the days ahead are assumed at the average of those days.
+ * Null on Monday or when nothing was logged earlier in the week, since there is no pace to go on yet.
+ */
+export function weekForecast(days: { day: string; kcal: number }[], today: string, maintenance: number): WeekForecast | null {
+  const { start } = calorieWeek(days, today, maintenance);
+  const done = days.filter((c) => c.day >= start && c.day < today);
+  if (!done.length) return null;
+  const doneKcal = done.reduce((a, c) => a + c.kcal, 0);
+  const avgPerDay = doneKcal / done.length;
+  const projected = doneKcal + avgPerDay * (7 - done.length);
+  return {
+    avgPerDay: Math.round(avgPerDay),
+    projected: Math.round(projected),
+    lb: Math.round(((projected - maintenance * 7) / KCAL_PER_LB) * 10) / 10,
+  };
+}
