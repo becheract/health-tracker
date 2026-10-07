@@ -1,14 +1,26 @@
 import { loadReadings } from "@/lib/readings";
 import { getSecretSetting, getSetting } from "@/lib/settings";
+import { parseDailyTarget } from "@/lib/calorie-week";
 import Dashboard from "./dashboard";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [readings, lastSync, connected] = await Promise.all([
+  const [readings, lastSync, connected, target] = await Promise.all([
     loadReadings(),
     getSetting("last_sync_at"),
     getSecretSetting("google_refresh_token").then(Boolean),
+    getSetting("calorie_daily_target").then(parseDailyTarget),
   ]);
-  return <Dashboard bp={readings.bp} weight={readings.weight} calories={readings.calories} lastSync={lastSync} connected={connected} now={Date.now()} />;
+  return (
+    <Dashboard
+      bp={readings.bp}
+      weight={readings.weight}
+      calories={readings.calories}
+      dailyTarget={target}
+      lastSync={lastSync}
+      connected={connected}
+      now={Date.now()}
+    />
+  );
 }

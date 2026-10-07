@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { calorieWeek, MAX_DAILY_TARGET, MIN_DAILY_TARGET } from "@/lib/calorie-week";
 import type { BpPoint, CaloriePoint, WeightPoint } from "@/lib/readings";
 
 const KG_TO_LB = 2.2046226218;
@@ -17,9 +18,9 @@ const RANGES: { value: Range; label: string }[] = [
   { value: 0, label: "All" },
 ];
 
-type Props = { bp: BpPoint[]; weight: WeightPoint[]; calories: CaloriePoint[]; lastSync: string | null; connected: boolean; now: number };
+type Props = { bp: BpPoint[]; weight: WeightPoint[]; calories: CaloriePoint[]; dailyTarget: number; lastSync: string | null; connected: boolean; now: number };
 
-export default function Dashboard({ bp, weight, calories, lastSync, connected, now }: Props) {
+export default function Dashboard({ bp, weight, calories, dailyTarget, lastSync, connected, now }: Props) {
   const [metric, setMetric] = useStored<Metric>("vitals.metric", "bp", (v) => v === "bp" || v === "wt" || v === "kcal");
   const [range, setRange] = useStored<Range>("vitals.range", 6, (v) => RANGES.some((r) => r.value === v));
   const lastReading = Math.max(bp.at(-1)?.t ?? 0, weight.at(-1)?.t ?? 0);
@@ -43,6 +44,8 @@ export default function Dashboard({ bp, weight, calories, lastSync, connected, n
       </header>
 
       <Summary bp={bp} weight={weight} calories={calories} now={now} />
+
+      {calories.length > 0 && <CalorieBudget calories={calories} dailyTarget={dailyTarget} now={now} />}
 
       <section className="panel" aria-label="Trend">
         <div className="controls">
@@ -144,6 +147,115 @@ function Summary({ bp, weight, calories, now }: { bp: BpPoint[]; weight: WeightP
         </div>
       )}
     </section>
+  );
+}
+
+/* ---------- Weekly calorie budget ---------- */
+
+function CalorieBudget({ calories, dailyTarget, now }: { calories: CaloriePoint[]; dailyTarget: number; now: number }) {
+  const w = calorieWeek(calories, localDay(now), dailyTarget);
+  const over = w.left < 0;
+  const ahead = w.eaten - w.pace; // > 0: eating faster than the budget allows so far
+  const pct = (n: number) => `${Math.min(100, (n / w.budget) * 100).toFixed(2)}%`;
+  const status: [string, string] = over
+    ? [`${fmtKcal(-w.left)} kcal over this week's budget`, "--critical"]
+    : ahead > 0
+      ? [`${fmtKcal(ahead)} kcal ahead of pace`, "--warn"]
+      : [`${fmtKcal(-ahead)} kcal under pace`, "--good"];
+
+  return (
+    <section className="budget" aria-label="Weekly calorie budget">
+      <div className="chart-head">
+        <h2>
+          This week <span className="muted">{fmtRange(w.start, w.end)}</span>
+        </h2>
+        <TargetEditor dailyTarget={dailyTarget} />
+      </div>
+      <div className="value">
+        {fmtKcal(w.eaten)}
+        <small>of {fmtKcal(w.budget)} kcal</small>
+      </div>
+      <div
+        className="bar"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={w.budget}
+        aria-valuenow={w.eaten}
+        aria-valuetext={`${fmtKcal(w.eaten)} of ${fmtKcal(w.budget)} kcal eaten this week`}
+      >
+        <div className="fill" style={{ width: pct(w.eaten), background: `var(${over ? "--critical" : "--kcal"})` }} />
+        {w.daysIn < 7 && <div className="pace" style={{ left: pct(w.pace) }} title={`Budget through today: ${fmtKcal(w.pace)} kcal`} />}
+      </div>
+      <div className="sub">
+        <span className="chip">
+          <i style={{ background: `var(${status[1]})` }} />
+          {status[0]}
+        </span>
+        {!over && (
+          <span>
+            {fmtKcal(w.left)} left · about {fmtKcal(w.perDayLeft)}/day {w.daysIn === 7 ? "today" : `for ${8 - w.daysIn} days`}
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TargetEditor({ dailyTarget }: { dailyTarget: number }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(dailyTarget));
+  const [error, setError] = useState<string | null>(null);
+
+  if (!editing) {
+    return (
+      <span className="sync">
+        Budget {fmtKcal(dailyTarget)} kcal/day
+        <button className="link" onClick={() => (setValue(String(dailyTarget)), setError(null), setEditing(true))}>
+          Edit
+        </button>
+      </span>
+    );
+  }
+  return (
+    <form
+      className="sync"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const res = await fetch("/api/settings/calorie-target", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kcal: Number(value) }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) return setError(body.error ?? "Couldn't save");
+        setEditing(false);
+        router.refresh();
+      }}
+    >
+      <label>
+        Daily target{" "}
+        <input
+          className="num"
+          type="number"
+          inputMode="numeric"
+          min={MIN_DAILY_TARGET}
+          max={MAX_DAILY_TARGET}
+          step={50}
+          value={value}
+          autoFocus
+          onChange={(e) => setValue(e.target.value)}
+        />{" "}
+        kcal
+      </label>
+      <button className="link" type="submit">
+        Save
+      </button>
+      <button className="link" type="button" onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+      {error && <span className="error">{error}</span>}
+    </form>
   );
 }
 
@@ -541,6 +653,11 @@ function fmtDate(t: number, withYear = false) {
 
 const lb = (kg: number) => kg * KG_TO_LB;
 const fmtKcal = (n: number) => Math.round(n).toLocaleString("en-US");
+/** "Oct 5 – 11" or "Sep 28 – Oct 4" for YYYY-MM-DD days. */
+function fmtRange(start: string, end: string) {
+  const d = (s: string, o: Intl.DateTimeFormatOptions) => new Date(`${s}T12:00:00`).toLocaleDateString("en-US", o);
+  return `${d(start, { month: "short", day: "numeric" })} – ${d(end, start.slice(5, 7) === end.slice(5, 7) ? { day: "numeric" } : { month: "short", day: "numeric" })}`;
+}
 /** YYYY-MM-DD in the viewer's time zone, to compare with the phone's calendar days. */
 const localDay = (t: number) => new Date(t).toLocaleDateString("en-CA");
 const round1 = (n: number) => Math.round(n * 10) / 10;
