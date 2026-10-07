@@ -48,8 +48,6 @@ export default function Dashboard({ bp, weight, calories, dailyTarget, lastSync,
 
       {calories.length > 0 && <CalorieBudget calories={calories} dailyTarget={dailyTarget} now={now} />}
 
-      {calories.length > 0 && <CalorieCalendar calories={calories} dailyTarget={dailyTarget} now={now} />}
-
       <section className="panel" aria-label="Trend">
         <div className="controls">
           <div className="seg" role="group" aria-label="Metric">
@@ -72,6 +70,7 @@ export default function Dashboard({ bp, weight, calories, dailyTarget, lastSync,
           </div>
         </div>
         <TrendChart metric={metric} range={range} bp={bp} weight={weight} calories={calories} now={now} />
+        {metric === "kcal" && calories.length > 0 && <CalorieCalendar calories={calories} dailyTarget={dailyTarget} now={now} />}
       </section>
 
       <Log bp={bp} weight={weight} />
